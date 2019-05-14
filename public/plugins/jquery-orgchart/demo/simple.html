@@ -1,0 +1,50 @@
+<!DOCTYPE HTML>
+
+<html>
+    <head>
+        <title>Org Chart</title>
+        <link rel="stylesheet" href="demo.css"/>
+        <link rel="stylesheet" href="../jquery.orgchart.css"/>
+        <script src="http://ajax.googleapis.com/ajax/libs/jquery/1.9.1/jquery.min.js"></script>
+        <script src="../jquery.orgchart.js"></script>
+        <script>
+        $(function() {
+            $("#chart").orgChart({container: $("#main")});
+        });
+        </script>
+    </head>
+
+    <body>
+
+        <div id="left">
+            <ul id="chart">
+            
+                <li>
+                    <em>Jomer Avengoza</em>
+            <ul >
+            <li>EM left_lvl_1_head_1<ul><li>em_lvl_2 head_1<ul><li>sample DS sad<ul></ul></li></ul></li><li>em_lvl_2 head_2<ul></ul></li></ul></li><li>EM left_lvl_1_head_2<ul><li>em_lvl_2 right_head_1<ul></ul></li><li>em_lvl_2 right_head_2<ul><li>test test<ul></ul></li></ul></li></ul></li><li>jomer avengoza<ul></ul></li><li>DS DS<ul></ul></li><li>new DS<ul></ul></li><li>sample DS<ul></ul></li>
+        </ul>
+                </li>
+        
+            </ul>
+        </div>
+
+        <div id="content">
+        
+            <h1>JQuery/CSS Organisation Chart</h1>
+        
+            <div id="main">
+            </div>
+            
+            <div class="text">
+                <h2>JQuery</h2>
+                <pre>
+$("#organisation").orgChart({container: $("#main")});
+                </pre>
+            </div>
+
+        </div>
+            
+  </body>
+
+</html>

@@ -1,0 +1,8 @@
+vendor/*
+bootstrap/cache/
+.env
+composer.phar
+.DS_store
+public/uploads/barcode/*
+public/teller_image/*
+public/uploads/

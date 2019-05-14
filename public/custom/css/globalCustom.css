@@ -1,0 +1,34 @@
+ul.error-list{ float:left; width:100%; padding-left:0; }
+ul.error-list li{ list-style:none; font-size:15px; color:#dc3519 }
+
+.header-content h2{ text-transform:capitalize; }
+.header-content .breadcrumb-wrapper ol.breadcrumb li{ text-transform:capitalize }
+
+#main .orgChart{ background-color:transparent; border:none; }
+#main .orgChart .nodes div.node{ background-color:white; border:1px solid #cecdcd; box-shadow:none; width:150px; height:100%; padding:10px; }
+#main .orgChart .nodes div.node h2{ text-align:center; }
+#main .orgChart .nodes div.node h2 img{ display:block; margin:0 auto; }
+#main .orgChart .nodes div.node h2 .owner-name{ float:left; width:100%; text-align:center; color:#81b71a; font-weight:bold; text-transform:capitalize; }
+#main .orgChart .line{ border-top:1px solid #eeeeef; }
+#main .orgChart .line.right.top{ border-top:2px solid black }
+#main .orgChart .line.left.top{ border-top:2px solid black }
+
+#sign-wrapper.sign-up{ width:70%; }
+#sign-wrapper.sign-up .sign-body{ background-color:white; }
+#sign-wrapper.sign-up .sign-footer{ background-color:white; }
+#sign-wrapper.sign-up .sign-body .form-group .error{ position:relative; left:0 !important; }
+#sign-wrapper.sign-up .sign-body .form-group:first-child .error:after{ content:"" }
+
+.dropzone{ border:2px dashed gray !important; margin-bottom:50px; }
+.dropzone .dz-default.dz-message{ background-repeat:no-repeat; }
+.dropzone.dz-drag-hover{ border:2px dashed #81B71B !important; background-color:rgba(129, 183, 27, 0.1); }
+.dropzone .button-save{ position:absolute; bottom:0px; top:auto; }
+
+input[type=text].referral_link_box{ font-size:20px !important; padding:20px 5px; }
+
+.fixed-notice{ position:fixed; top:0; width:100%; z-index:1001; text-align:center; background-color:#af2222; padding:10px 0; color:white; font-weight:bold; font-size:19px; }
+.fixed-notice.for-activation{ background-color:#22a1af }
+body.not-maintained{ margin-top:41px; }
+
+.pay-now{ color:white; border:2px solid white; padding:0px 16px; -webkit-transition: all .5s ease; -moz-transition: all .5s ease; -ms-transition: all .5s ease; -o-transition: all .5s ease; transition: all .5s ease; }
+.pay-now:hover{ color:#730808; text-decoration:none; background:white; }

@@ -1,0 +1,133 @@
+a {
+	text-decoration: none !important;
+}
+
+img {
+	max-width: 100%;
+}
+
+.content-coming {
+	background: url('../../../program_services/bg-cs.png') no-repeat center center; 
+	background-size: cover;
+	margin: -7px 0 0 0 !important;
+	.man {
+		width: 85%;
+	}
+}
+.body-content {
+	padding: 0px !important;
+}
+
+.primary {
+	color: $primary-color;
+
+	&.btn {
+		color: $white !important;
+		@include button-variant($primary-color, $primary-color);
+	}
+
+	&.bg {
+		color: $white !important;
+		background-color: $primary-color;
+	}
+
+	&.thead th {
+		background-color: $primary-color;
+		border-color: $primary-color;
+	}
+}
+
+.orange {
+	color: $orange;
+
+	&.btn {
+		color: $white !important;
+		@include button-variant($orange, $orange);
+	}
+
+	&.bg  {
+		color: $white !important;
+		background-color: $orange;
+	}
+
+	&.thead th {
+		background-color: $orange;
+		border-color: $orange;
+	}
+}
+
+.blue {
+	color: $blue;
+
+	&.btn {
+		color: $white !important;
+		@include button-variant($blue, $blue);
+	}
+
+	&.bg {
+		color: $white !important;
+		background-color: $blue;
+	}
+
+	&.thead th {
+		background-color: $blue;
+		border-color: $blue;
+	}
+}
+
+.red {
+	color: $red;
+
+	&.btn {
+		color: $white !important;
+		@include button-variant($red, $red);
+	}
+
+	&.bg {
+		color: $white !important;
+		background-color: $red;
+	}
+
+	&.thead th {
+		background-color: $red;
+		border-color: $red;
+	}
+}
+
+.grey {
+	color: darken($grey, 10%);
+
+	&.btn {
+		color: $black !important;
+		@include button-variant(darken($grey, 10%), darken($grey, 10%));
+	}
+
+	&.bg {
+		color: $black !important;
+		background-color: darken($grey, 10%);
+	}
+	
+	&.thead th {
+		background-color: $grey;
+		border-color: $grey;
+	}
+}
+
+.white {
+	color: darken($white, 10%);
+
+	&.btn {
+		color: $black !important;
+		@include button-variant(darken($white, 10%), darken($white, 10%));
+	}
+
+	&.bg {
+		color: $black !important;
+		background-color: darken($white, 10%);
+	}
+
+	&.thead th {
+		background-color: $white;
+		border-color: darken($white, 10%);
+	}
+}

@@ -1,0 +1,93 @@
+
+/* width */
+.w-5{
+    width: 5 !important;
+}
+.w-7{
+    width: 7% !important;
+}
+.w-8{
+    width: 8% !important;
+}
+.w-9{
+    width: 9% !important;
+}
+.w-10{
+    width: 10% !important;
+}
+.w-11{
+    width: 11% !important;
+}
+.w-12{
+    width: 12% !important;
+}
+.w-13{
+    width: 13% !important;
+}
+.w-14{
+    width: 14% !important;
+}
+.w-15{
+    width: 15% !important;
+}
+.w-16{
+    width: 16% !important;
+}
+
+.w-70{
+    width: 70% !important;
+}
+
+.w-100{
+    width: 100% !important;
+}
+.wpx-200{
+    width: 200px;
+}
+/* margin */
+.m-5{
+    margin: 5px;
+}
+.m-1{
+    margin: 1px;
+}
+.m-2{
+    margin: 2px;
+}
+.mr-5{
+    margin-right: 5px;
+}
+.pr-2{
+    padding-right: 2px;
+}
+
+/* padding */
+.pr-3{
+    padding-right: 3px;
+}
+.pr-5{
+    padding-right: 5px;
+}
+
+
+/* hr tag */
+.hr-code{
+
+    background-color: #000000;
+    border: 0 none;
+    color: #eee;
+    height: 1px;
+}
+
+/*  */
+.cut-text{
+    text-overflow: ellipsis;
+    overflow: hidden;
+    white-space: nowrap;
+    display: block;
+}
+
+
+table.fixed{
+    table-layout: fixed;
+}

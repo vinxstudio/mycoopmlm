@@ -1,0 +1,837 @@
+<?php
+/**
+ * Created by PhpStorm.
+ * User: jomeravengoza
+ * Date: 3/3/17
+ * Time: 6:15 PM
+ */
+
+namespace App\Helpers;
+
+use App\Http\TraitLayer\GlobalSettingsTrait;
+use App\Models\Accounts;
+use App\Models\ActivationCodes;
+use App\Models\Company;
+use App\Models\CompanyEarnings;
+use App\Models\Downlines;
+use App\Models\Membership; /*addded*/
+use App\Models\Earnings;
+use App\Models\EWallet;
+use App\Models\MoneyPot;
+use App\Models\PairingSettings;
+use App\Models\ReactivationPurchases;
+use App\Models\User;
+
+class Binary{
+
+    use GlobalSettingsTrait;
+
+    private $memberObject = null;
+
+    protected $levelOneAccountId;
+
+    protected $maxLevelsToShow = 8;
+
+    protected $everyNthLevel = [];
+
+    function __construct(){
+        $company = Company::find($this->companyID);
+        $maxPair = $company->daily_max_pair;
+        $counters = [];
+        $every = config('pairingHooks.everyNthPair');
+
+
+        for ($i = $every; $i<= $maxPair; $i+=$every){
+            $counters[] = $i;
+        }
+
+        $this->everyNthLevel = $counters;
+		
+    }
+
+    function setMemberObject($object){
+        $this->memberObject = $object;
+        return $this;
+    }
+
+    private function getMemberObject(){
+        return $this->memberObject;
+    }
+
+    function setStaticCompensation($amount){
+        $this->compensation = $amount;
+        return $this;
+    }
+
+    private function enlistAccounts(){
+        $accounts = Accounts::all();
+
+        $result = new \stdClass();
+
+        $result->list = [];
+        $result->userIdsFreeCodes = [];
+
+        foreach ($accounts as $account){
+            $result->list[$account->id] = $account;
+
+            if (in_array($account->code->type, $this->toAvoidCodeTypes)){
+                $result->userIdsFreeCodes[] = $account->id;
+            }
+        }
+
+        return $result;
+    }
+
+    private function hookEvents($pair, $upline, $baseMember, $level){
+
+        if (in_array($baseMember->codes->code_type, $this->blockTypes)){
+            $pair = false;
+        }
+
+        return $pair;
+
+    }
+
+    private function getPairedIds(){
+        $earnings = Earnings::where('source', $this->earningsPairingKey)->get();
+
+        $ids = [];
+
+        foreach ($earnings as $row){
+            $ids[$row->account_id][] = $row->left_user_id;
+            $Ids[$row->account_id][] = $row->right_user_id;
+        }
+
+        return $ids;
+    }
+
+    function crawl(){
+
+        $base = $this->getMemberObject();
+
+        $userList = $this->enlistAccounts()->list;
+
+        $upline_id = $base->upline_id;
+
+        $currentLevel = 1;
+
+        $node = $base->node;
+
+        $downlines = [];
+
+        while ($upline_id > 0){
+
+            $query = Downlines::where([
+                'parent_id'=>$upline_id,
+                'account_id'=>$base->id,
+                'level'=>$currentLevel,
+                'node'=>$node
+            ])->get();
+
+            if ($query->isEmpty()) {
+                $downlines[] = [
+                    'parent_id' => $upline_id,
+                    'account_id' => $base->id,
+                    'level' => $currentLevel,
+                    'node' => $node,
+                    'code_id'=>$base->code_id,
+                    'created_at' => date('Y-m-d h:i:s')
+                ];
+            }
+
+            $currentLevel++;
+            $node = $userList[$upline_id]->node;
+            $upline_id = $userList[$upline_id]->upline_id;
+
+        }
+
+        if (count($downlines) > 0){
+            Downlines::insert($downlines);
+        }
+
+        $details = $this->crawlIncome($base);
+
+        return $details;
+
+    }
+
+    function crawlIncome($base){
+
+        $pairedIDs = $this->getPairedIds(); //avoid pairing if ids match from stack
+
+        $result = new \stdClass();
+
+        $result->totalDeductionsToCompanyEarnings = 0;
+
+        if (count($base->uplineIDs) <= 0){
+            return;
+        }
+
+        $accounts = Accounts::whereIn('id', $base->uplineIDs)->get();
+
+        $income = [];
+
+        $earnings = [];
+
+        $eWallet = [];
+
+        $encoded = [];//this will store a stack of user ids already encoded in $earnings stack
+
+        $accountIdsEarnedFromPairing = [];
+
+        $company = Company::find($this->companyID);
+
+        $pairingForFreeCodes = ($company->free_code_pairing <= 0) ? true : false;
+
+        foreach ($accounts as $object){
+            $downlines = $object->downlinesArray->withoutLevel;
+
+            foreach ($downlines as $level=>$value){
+
+                if (!isset($value['left']) or !isset($value['right'])){
+                    break;
+                }
+                $leftNodes = $value['left'];
+                $rightNodes = $value['right'];
+
+                foreach ($leftNodes as $key=>$left){
+                    if (in_array($left, $pairedIDs)){
+                        unset($leftNodes[$key]);
+                    }
+                }
+
+                foreach ($rightNodes as $key=>$right){
+                    if (in_array($right, $pairedIDs)){
+                        unset($rightNodes[$key]);
+                    }
+                }
+
+                if (count($leftNodes) > 0 and count($rightNodes) > 0){
+
+                    $combine = array_combine2($leftNodes, $rightNodes);
+
+                    $pairedArray = isset($pairedIDs[$object->id]) ? $pairedIDs[$object->id] : [];
+                    $encodedArray = isset($encoded[$object->id]) ? $encoded[$object->id] : [];
+                    foreach ($combine as $leftID=>$rightID){
+//                        $income['level-'.$level] = $company->pairing;
+                        //$theIncome = $company->pairing;//(isset($income['level-'.$level]) and $income['level-'.$level] > 0) ? $income['level-'.$level] : 0;
+
+						//added to get the exact pairing Income
+						/*
+						 'user_id' => $object->user_id,
+                            'source' => $this->earningsPairingKey,
+                            'amount' => $theIncome,
+                            'level' => $level,
+                            'left_user_id' => $leftID,
+                            'right_user_id' => $rightID,
+						*/
+						
+						$thisUser = User::find($object->user_id);
+						
+						$leftUserAccount = Accounts::find($leftID);
+						$leftUser = User::find($leftUserAccount->user_id);
+						
+						$rightUserAccount = Accounts::find($rightID);
+						$rightUser = User::find($rightUserAccount->user_id);
+						
+						$thisUserId = $thisUser->member_type_id;
+						if (isset($leftUser)) {
+							$leftUserId = $leftUser->member_type_id;
+						} else {
+							$leftUserId = $thisUserId;
+						}
+						
+						if (isset($leftUser)){
+							$rightUserId = $rightUser->member_type_id;
+						} else {
+							$rightUserId = $thisUserId;
+						}
+				
+						$thisUserMembership = Membership::find($thisUserId);
+						$leftUserMembership = Membership::find($leftUserId);
+						$rightUserMembership = Membership::find($rightUserId);
+						
+						$userPairingIncome = $thisUserMembership->pairing_income;
+						$leftPairingIncome = $leftUserMembership->pairing_income;
+						$rightPairingIncome = $rightUserMembership->pairing_income;
+						
+						//whichever is lowest
+						
+						$theIncome = min($userPairingIncome,$leftPairingIncome,$rightPairingIncome);
+						//end ---> exact pairing income
+						
+                        $theCount = array_count_values($accountIdsEarnedFromPairing);
+
+                        $countEarnings = Earnings::where([
+                            'account_id'=>$object->id,
+                            'source'=>$this->earningsPairingKey,
+                        ])->whereDate('created_at', '=', date('Y-m-d'))->count();
+
+                        if ($object->code->type == FREE_CODE and !$pairingForFreeCodes){
+                            $theIncome = 0; //means pairing for free codes is not allowed.
+                        }
+
+                        if ($object->user->is_maintained == 'false'){
+                            $theIncome = 0;
+                        }
+
+                        $theIncomeObject = $this->EarningsHook($object->id, [
+                            'account_id' => $object->id,
+                            'user_id' => $object->user_id,
+                            'source' => $this->earningsPairingKey,
+                            'amount' => $theIncome,
+                            'level' => $level,
+                            'left_user_id' => $leftID,
+                            'right_user_id' => $rightID,
+                            'created_at' => date('Y-m-d H:i:s')
+                        ]);
+
+                        if (count(config('pairingHooks.hooks'))){
+
+                            $hooks = new BinaryHooks();
+                            $theIncomeObject = $hooks->make($object, $countEarnings, $level, $theIncomeObject);
+
+                        }
+
+                        //we have to record even 0 income to track and identify if they reached the maximum pair per day
+
+                        $pairingCharge = config('system.pairing_charge');
+                        if ($theIncomeObject['amount'] > 0 and $pairingCharge > 0){
+                            $walletValue = calculatePercentage($pairingCharge, $theIncomeObject['amount']);
+                            $eWallet[] = [
+                                'account_id'=>$theIncomeObject['account_id'],
+                                'user_id'=>$theIncomeObject['user_id'],
+                                'source'=>$theIncomeObject['source'],
+                                'amount'=>$walletValue,
+                                'created_at' => date('Y-m-d H:i:s')
+                            ];
+                            $theIncomeObject['amount'] = $theIncomeObject['amount'] - $walletValue;
+                        }
+
+                        $earnings[] = $theIncomeObject;
+
+                        $result->totalDeductionsToCompanyEarnings += $theIncome;
+
+                        $accountIdsEarnedFromPairing[] = $object->id;
+
+                    }
+
+
+                }
+
+            }
+
+        }
+
+        if (count($earnings) > 0){
+            Earnings::insert($earnings);
+        }
+
+        if (count($eWallet) > 0){
+            EWallet::insert($eWallet);
+        }
+
+        $this->flushout();
+        $this->reclaimFreeAccounts();
+        return $result;
+
+    }
+
+    function flushout(){
+
+        $countryCode = config('system.countryCode');
+
+        $timeZones = \DateTimeZone::listIdentifiers(\DateTimeZone::PER_COUNTRY, $countryCode);
+        date_default_timezone_set($timeZones[0]);
+
+        $currentDate = date('Y-m-d');
+		//added date time
+		//$currentDateTime = date('Y-m-d hh:mm:ss');
+		//      ->whereBetween('created_at', array($from, $to))->first();
+		
+		
+        $company = getCompanyObject();
+        $maxPair = $company->daily_max_pair;
+
+        $check = Earnings::whereDate('created_at', '=', $currentDate)->where([
+            'source'=>PAIRING_EARNINGS,
+        ])->get(); //so we need only the user ids that are involved
+
+        $userIds = [];
+        $earningsToUpdate = [];
+
+        foreach ($check as $ch){
+            if (!in_array($ch->user_id, $userIds)) {
+                $userIds[] = $ch->user_id;
+            }
+        }
+
+        if (count($userIds) > 0) {
+            foreach ($userIds as $userID) {
+                $q = Earnings::whereDate('created_at', '=', $currentDate)->where([
+                    'user_id' => $userID,
+                    'source' => PAIRING_EARNINGS
+                ])->orderBy('id', 'DESC')->get();
+
+
+                $todayCount = 0;
+                $totalPairs = 1; //plus current earnings
+
+                foreach ($q as $earnings) {
+
+                    if ($todayCount >= $maxPair) {
+                        $earningsToUpdate[] = $earnings->id;
+                    }
+
+                    $todayCount++;
+                    $totalPairs++;
+                }
+
+            }
+
+        }
+
+        if (count($earningsToUpdate) > 0){
+            Earnings::whereIn('id', $earningsToUpdate)->update([
+                'amount'=>0
+            ]);
+        }
+
+        //then recheck again for the account maintenance
+        $usersToUpdate = [];
+        $saveDeductions = [];
+        foreach ($userIds as $userID) {
+            $user = User::find($userID);
+            if ($user->is_maintained == TRUE_STATUS) {
+                $overallEarnings = $user->earnings;
+                $purchasedReactivation = ReactivationPurchases::where([
+                    'user_id' => $user->id
+                ])->get();
+
+                $targetNumberOfActivation = (int)($overallEarnings / $company->activation_every);
+
+                if ($targetNumberOfActivation > $purchasedReactivation->count()) {
+                    $usersToUpdate[] = $user->id;
+                    //deduct earnings
+                    $multiplier = $purchasedReactivation->count();
+                    if ($multiplier <= 0) {
+                        $multiplier = 1;
+                    }
+                    $toDeduct = $overallEarnings - ($company->activation_every * $multiplier);
+                    $saveDeductions[] = [
+                        'account_id' => $user->account->id,
+                        'user_id' => $user->id,
+                        'source' => SYSTEM_GENERATED,
+                        'amount' => ($toDeduct * -1),
+                        'created_at' => date(CREATED_AT_FORMAT),
+                    ];
+                }
+            }
+        }
+
+        if (count($usersToUpdate) > 0){
+            User::whereIn('id', $usersToUpdate)->update([
+                'is_maintained'=>FALSE_STATUS
+            ]);
+        }
+
+        if (count($saveDeductions) > 0){
+            Earnings::insert($saveDeductions);
+        }
+
+    }
+
+    private function reclaimFreeAccounts(){
+        $freeCodes = ActivationCodes::where([
+            'type'=>FREE_CODE,
+            'status'=>USED_STATUS
+        ])->get();
+
+        $accountIds = [];
+        $codesToUpdate = [];
+        $userEarningsToUpdate = [];
+
+        foreach ($freeCodes as $free){
+            $accountIds[] = $free->id;
+        }
+
+        if (count($accountIds) > 0){
+            $company = getCompanyObject();
+            $accounts = Accounts::whereIn('code_id', $accountIds)->get();
+            foreach ($accounts as $account){
+                if ($account->totalEarned >= $company->entry_fee){
+                    $codesToUpdate[] = $account->code_id;
+					
+					// added Activation code activation to other Type
+					$thisUser = User::find($account->user_id);
+					$membershipId = $thisUser->member_type_id;
+				
+					$thisUserMembership = Membership::find($membershipId);
+					
+					$membershipname = $thisUserMembership->membership_type_name;
+					 ActivationCodes::where('id', $account->code_id)->update(['type'=>$membershipname]);
+					
+					//end added  ---> code activation to other Type
+					
+                    $userEarningsToUpdate[] = [
+                        'user_id'=>$account->user_id,
+                        'account_id'=>$account->id
+                    ];
+                }
+            }
+        }
+		/*
+        if (count($codesToUpdate) > 0){
+            ActivationCodes::whereIn('id', $codesToUpdate)->update(['type'=>REGULAR_CODE]);
+			
+        }
+		*/
+
+        if (count($userEarningsToUpdate) > 0){
+            $earnings = [];
+            $company = getCompanyObject();
+            //$balance = ($company->entry_fee * (-1));
+			
+			
+			
+			
+            foreach ($userEarningsToUpdate as $row){
+				
+				//added to get the exact entry fee for balance
+				if ($row['user_id'] != NULL) {
+					$thisUser = User::find($row['user_id']);
+					$membershipId = $thisUser->member_type_id;
+				
+					$thisUserMembership = Membership::find($membershipId);
+					
+					$balance = ($thisUserMembership->entry_fee * (-1));
+					
+				} else {
+					
+					$balance = ($company->entry_fee * (-1));
+					
+				}
+			
+				// end --- to get the exact entry fee for balance
+				
+                $earnings[] = [
+                    'account_id'=>$row['account_id'],
+                    'user_id'=>$row['user_id'],
+                    'amount'=>$balance,
+                    'source'=>SYSTEM_GENERATED,
+                    'created_at'=>date('Y-m-d H:i:s')
+                ];
+            }
+
+            Earnings::insert($earnings);
+        }
+
+    }
+
+    private function EarningsHook($account_id, $earningsArray){
+
+        /*if (config('pairingHooks.enable')) {
+            $earnings = Earnings::where([
+                'account_id' => $account_id,
+                'source' => $this->earningsPairingKey,
+                'from_funding' => false
+            ])->whereDate('created_at', '=', date('Y-m-d'))->get();
+
+            if (in_array($earnings->count(), $this->everyNthLevel)) {
+                $earningsArray['source'] = $this->earningsGCKey;
+            }
+        }*/
+
+        return $earningsArray;
+    }
+
+    function setLevelOneAccount($id){
+        $this->levelOneAccountId = $id;
+        return $this;
+    }
+
+     function renderTree($level = 1){
+
+        $start_id = $this->levelOneAccountId;
+        $total_count = 0;
+        $html = "";
+        $level++;
+        $usr = Accounts::where('upline_id', $start_id)->get();
+		$html .= "<ul>";
+		
+		foreach ($usr as $row) {
+			$queryLeft = Downlines::where([
+                'parent_id'=>$start_id,
+                'level'=>$level,
+                'node'=>'left'
+            ])->get();
+			$queryRight = Downlines::where([
+                'parent_id'=>$start_id,
+                'level'=>$level,
+                'node'=>'right'
+            ])->get();
+            $html .= sprintf("<li class=\"binary code\">-%s", $row->code->type .' '. $row->node);
+            $html .= sprintf("<a href=\"%s\">", url('member/network-tree/index/' .strtoupper($row->code->account_id) . '-' . $row->user->id));
+            $html .= sprintf("<img src=\"%s\" width=\"80\" height=\"80\">", url($row->user->details->thePhoto));
+            $html .= sprintf("<span class=\"owner-name\">%s</span>", $row->user->details->fullName);
+            $html .= sprintf("<span class=\"account-id\">%s</span>", strtoupper($row->code->account_id));
+            $html .= '</a>';
+          //  $html .= "<ul>";
+			
+			//if (($level-1) >= config('system.max_levels_to_show')  ) { 
+				if ($queryLeft->isEmpty() && $queryRight->isEmpty()) {
+					$html .= $this->renderActivate($start_id, $level);
+				 //else if(!$queryLeft->isEmpty()) {
+				 //	$html .= $this->renderLeftActivate();
+				} else if (!$queryLeft->isEmpty()){
+					if (($level) < config('system.max_levels_to_show')) {
+						$html .= $this->setLevelOneAccount($row->id)->renderTree($level);
+						
+						}
+					} else { // last node
+						$html .= $this->renderLeftActivate();
+					}
+				} else if (!$queryRight->isEmpty()){
+					if (($level) < config('system.max_levels_to_show')) {
+			
+						//$html .= $this->renderActivate();
+						//$html .= $this->renderRightActivate();
+						$html .= $this->setLevelOneAccount($row->id)->renderTree($level);
+						
+				
+					} else { //last node
+						$html .= $this->renderRightActivate();
+					}
+				} else {
+					$html .= $this->renderRightActivate();
+				}
+			//}	
+
+			
+			//if(!$queryLeft->isEmpty()) {
+            $html .= "";
+            $html .= "</li>";
+			
+			
+        }  
+		
+		
+		
+		$html .= "</ul>";
+        $level++;
+		
+        return $html;
+    }
+	
+	//for inside node
+	function renderLeftActivate(){
+		$html .= "";
+		
+				$html .= "<ul>";
+				$html .= sprintf("<li class=\"binary code-\">%s" ,'left');
+				$html .= sprintf("<a href=\"\">", url('member/network-tree/index/'));
+				$html .= sprintf("<span class=\"owner-name\">%s</span>", 'Taken');
+				$html .= sprintf("<span class=\"account-id\"></span><br/>");
+				
+				
+				
+				$html .= "</a>";
+				
+				$html .= "</li>";
+				
+				$html .= sprintf("<li class=\"binary code-\">%s" ,'right');
+				$html .= sprintf("<a href=\"\">", url('member/network-tree/index/'));
+				$html .= sprintf("<span class=\"owner-name\">%s</span>", 'TAken');
+				$html .= sprintf("<span class=\"account-id\"></span><br/>");
+				
+				
+				
+				$html .= "</a>";
+				
+				$html .= "</li>";
+				$html .= "</ul>";
+		
+				
+			return $html;
+	} 
+	function renderRightActivate(){
+		$html .= "";
+		
+				$html .= "<ul>";
+				$html .= sprintf("<li class=\"binary code-\">%s" ,'left');
+				$html .= sprintf("<a href=\"\">", url('member/network-tree/index/'));
+				$html .= sprintf("<span class=\"owner-name\">%s</span>", 'Taken');
+				$html .= sprintf("<span class=\"account-id\"></span><br/>");
+				
+				
+				
+				$html .= "</a>";
+				
+				$html .= "</li>";
+				
+				$html .= sprintf("<li class=\"binary code-\">%s" ,'right');
+				$html .= sprintf("<a href=\"\">", url('member/network-tree/index/'));
+				$html .= sprintf("<span class=\"owner-name\">%s</span>", 'Taken');
+				$html .= sprintf("<span class=\"account-id\"></span><br/>");
+				
+				
+				
+				$html .= "</a>";
+				
+				$html .= "</li>";
+				$html .= "</ul>";
+		
+				
+			return $html;
+	} 
+	function renderActivate($parentid, $level){
+			$queryLeft = Downlines::where([
+                'parent_id'=>$parentid,
+                'level'=>$level,
+                'node'=>'left'
+            ])->get();
+			$queryRight = Downlines::where([
+                'parent_id'=>$parentid,
+                'level'=>$level,
+                'node'=>'right'
+            ])->get();
+			$newhtml = "";
+		
+		
+		if (!$queryLeft->isEmpty()){
+			$newhtml .= $this->setLevelOneAccount($parentid)->renderTree($level);
+		} else if (!$queryRight->isEmpty()){
+			$newhtml .= $this->setLevelOneAccount($parentid)->renderTree($level);
+		} else {
+		  
+				
+		
+				
+				$newhtml .= "<ul>";
+				$newhtml .= sprintf("<li class=\"binary code-\">%s" ,'left');
+				$newhtml .= sprintf("<a href=\"\">", url('member/network-tree/index/'));
+				$newhtml .= sprintf("<span class=\"owner-name\">%s</span>", 'Activate');
+				$newhtml .= sprintf("<span class=\"account-id\"></span><br/>");
+				
+				
+				
+				$newhtml .= "</a>";
+				
+				$newhtml .= "</li>";
+				
+				$newhtml .= sprintf("<li class=\"binary code-\">%s" ,'right');
+				$newhtml .= sprintf("<a href=\"\">", url('member/network-tree/index/'));
+				$newhtml .= sprintf("<span class=\"owner-name\">%s</span>", 'Activate');
+				$newhtml .= sprintf("<span class=\"account-id\"></span><br/>");
+				
+				
+				
+				$newhtml .= "</a>";
+				
+				$newhtml .= "</li>";
+				$newhtml .= "</ul>";
+		
+		}
+				
+			return $newhtml;
+	} 
+
+    function runReferral($pairing, $companyIncome, $sponsor_id, $sponsor, $activationCode, $userid){
+        $allowReferral = true;
+        $company = getCompanyObject();
+
+        $sponsor = Accounts::find($sponsor_id);
+
+        if (isset($sponsor->id)) {
+            if (in_array($sponsor->code->type, $this->toAvoidCodeTypes) and $company->free_code_referral >= 1) {
+                $allowReferral = false;
+            }
+
+            if ($activationCode->type == FREE_CODE) { //if the current encoded is also free code, then no referral
+                $allowReferral = false;
+            }
+
+            if ($allowReferral) {
+				
+				// added and updated to get the exact user referral_income
+				if ($sponsor_id != NULL) {
+					//$companyEarnings = new CompanyEarnings();
+					$theUser = User::find($userid);
+					
+					// 1/17/2018 edit
+					$accountSponsor = Accounts::find($sponsor_id);
+					$sponsorUser = User::find($accountSponsor->user_id);
+					
+					$sponsormembershipId = $sponsorUser->member_type_id;
+					// 1/17/2018 end
+					
+					$usermembershipId = $theUser->member_type_id;
+					
+					$sponsorMembership = Membership::find($sponsormembershipId);
+					$userMembership = Membership::find($usermembershipId);
+					
+					$referralIncome = min($sponsorMembership->referral_income,$userMembership->referral_income);
+					//$referralIncome = $sponsorMembership->referral_income;
+					
+					$companyEarningsAmount =  $userMembership->entry_fee;
+					//$companyEarningsAmount = $sponsorMembership->entry_fee;
+					
+					$moneyPotAmount = min($sponsorMembership->money_pot, $userMembership->money_pot);
+					//$moneyPotAmount = $sponsorMembership->money_pot;
+				} else {
+					$referralIncome = $company->referral_income;
+					$companyEarningsAmount = $company->entry_fee;
+					$moneyPotAmount = $company->money_pot;
+				}
+					
+				//end added for referral_income
+
+                if ($sponsor_id > 0) {
+                    //$referralIncome = $company->referral_income;
+					
+					
+					
+                    if ($sponsor->user->is_maintained == false) {
+                        $referralIncome = 0;
+                    }
+
+                    $directReferralCharge = config('system.direct_referral_charge');
+                    if ($referralIncome > 0 and $directReferralCharge > 0) {
+                        $eWallet = calculatePercentage($directReferralCharge, $referralIncome);
+                        $wallet = new EWallet();
+                        $wallet->account_id = $sponsor->id;
+                        $wallet->user_id = $sponsor->user_id;
+                        $wallet->source = $this->earningsDirectReferralKey;
+                        $wallet->amount = $eWallet;
+                        $wallet->save();
+                        $referralIncome = $referralIncome - $eWallet;
+                    }
+
+                    $earnings = new Earnings;
+                    $earnings->account_id = $sponsor->id;
+                    $earnings->user_id = $sponsor->user_id;
+                    $earnings->source = $this->earningsDirectReferralKey;
+                    $earnings->amount = $referralIncome;
+                    $earnings->save();
+                }
+
+                $companyEarnings = new CompanyEarnings();
+                //$companyEarnings->amount = $company->entry_fee;
+                $companyEarnings->amount = $companyEarningsAmount;
+				//added exact package entry_fee
+				
+				$companyEarnings->details = $this->companyIncomeDetails;
+                $companyEarnings->save();
+
+                $moneyPot = new MoneyPot();
+                //$moneyPot->amount = $company->money_pot;
+				$moneyPot->amount = $moneyPotAmount;
+                $moneyPot->source = $this->companyIncomeDetails;
+                $moneyPot->save();
+
+            }
+        }
+
+    }
+
+}
